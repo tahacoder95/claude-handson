@@ -1,6 +1,8 @@
 # PureCS Market Place
 
-A thin MVP marketplace for a **live demo with ~20 users**: people post items for sale, others browse them and contact the seller by phone. One iOS app with two modes (Buying / Selling) on a single account, backed by a small Node.js + SQLite API.
+A thin MVP marketplace (first shown as a live demo): people post items for sale, others browse them and contact the seller by phone. One account has two modes, Buying and Selling. Clients: **iOS (done)**, **Android and web (to build)**, all on one small Node.js + SQLite API.
+
+Human-facing docs live in `README.md` and `docs/`. Read the relevant one before working in an area: `docs/API.md` (the contract), `docs/ARCHITECTURE.md`, `docs/DESIGN.md`, `docs/ANDROID.md`, `docs/WEB.md`, `docs/LOCAL_SETUP.md`, `docs/DEPLOYMENT.md`.
 
 Keep the scope thin. If a request adds something from "Out of scope" below, say so and confirm before building it.
 
@@ -8,13 +10,16 @@ Keep the scope thin. If a request adds something from "Out of scope" below, say 
 
 ```
 .
-├── CLAUDE.md
+├── README.md, CLAUDE.md
+├── docs/                           setup, architecture, API contract, design spec, Android/web guides, deployment
 ├── .claude/skills/ios-develop/     iOS coding rules (MVVM, SOLID, conventions) — load before touching Swift
 ├── PureCS Market Place/            iOS app (Xcode project)
 │   ├── PureCS Market Place.xcodeproj
 │   ├── Config/Info.plist           merged into the generated plist (ATS exception for the HTTP demo server)
 │   └── PureCS Market Place/        Swift sources: App/ Core/ DesignSystem/ Features/
-└── backend/                        Node.js API: src/{routes,services,repositories,middleware,validation,db} · scripts/seed.js · test/
+├── backend/                        Node.js API: src/{routes,services,repositories,middleware,validation,db,storage} · api/ (Vercel) · scripts/seed.js · test/
+├── android/                        (to create) Kotlin + Jetpack Compose — follow docs/ANDROID.md
+└── web/                            (to create) React + TypeScript + Vite — follow docs/WEB.md
 ```
 
 ## Scope
@@ -91,14 +96,24 @@ npm test          # node:test: API suite + the Vercel handler, against temp SQLi
 | PATCH | `/listings/:id` | owner only: fields and/or `status` |
 | DELETE | `/listings/:id` | owner only |
 
+## Android and web
+
+Neither exists yet. When creating them, follow `docs/ANDROID.md` / `docs/WEB.md`: same layering as iOS (screen → view model → role-based repository interfaces → API client, mocks for previews/tests/offline mode), design tokens from `docs/DESIGN.md`, behaviour from the parity checklist. Android emulator reaches the local API at `http://10.0.2.2:3000`; the web dev server at `http://localhost:5173` calls the API directly (CORS is on, `CORS_ORIGINS` default `*`).
+
 ## Working rules
+
+- `docs/API.md` is the contract all clients build against: update it in the same change as any schema, serializer or endpoint change, and keep `SampleData.swift` in step with `backend/src/db/seed.js`.
 
 - Build after every Swift change and report the real result; don't claim success without it.
 - Keep every screen previewable with mock data — if it can't be previewed, the dependencies are wrong.
 - Use sample data that reads like real UAE listings (AED prices, Dubai / Abu Dhabi / Sharjah areas); no lorem ipsum.
 - Don't commit, push or create branches unless asked.
 
+## Deployment status
+
+The API is on Vercel (`claude-handson-purecs`, Root Directory `backend`), and the function runs. It still needs Turso (`TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`) and Vercel Blob (`BLOB_READ_WRITE_TOKEN`) connected; until then every request returns a 500 "not configured" JSON error. Steps: `docs/DEPLOYMENT.md`.
+
 ## Open decisions (ask before assuming)
 
-1. Will the 20 demo users install the app on their own phones (TestFlight + hosted backend) or watch one device?
-2. Where the Node server is hosted (Render / Railway / Fly.io / VM vs a laptop on venue Wi-Fi).
+1. How the iOS app is distributed beyond the demo (TestFlight, App Store).
+2. Whether Android and web reuse this repo (`android/`, `web/`) or get their own (the docs assume this repo).

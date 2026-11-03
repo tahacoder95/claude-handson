@@ -1,4 +1,5 @@
 import express from 'express';
+import { createCors } from './middleware/cors.js';
 import { createErrorHandler } from './middleware/errorHandler.js';
 import { createRequireAuth } from './middleware/requireAuth.js';
 import { createPhotoUpload } from './middleware/upload.js';
@@ -16,7 +17,14 @@ import { createListingsService } from './services/listingsService.js';
  * Wires repositories → services → routes. Takes the database and photo storage so tests and
  * each deployment target can supply their own.
  */
-export function createApp({ db, photoStorage, maxPhotos = 3, maxPhotoBytes = 4 * 1024 * 1024, logRequests = false }) {
+export function createApp({
+  db,
+  photoStorage,
+  maxPhotos = 3,
+  maxPhotoBytes = 4 * 1024 * 1024,
+  corsOrigins = ['*'],
+  logRequests = false,
+}) {
   const authService = createAuthService({
     users: createUsersRepository(db),
     sessions: createSessionsRepository(db),
@@ -32,6 +40,7 @@ export function createApp({ db, photoStorage, maxPhotos = 3, maxPhotoBytes = 4 *
   const app = express();
   app.disable('x-powered-by');
   if (logRequests) app.use(requestLogger);
+  app.use(createCors(corsOrigins));
   app.use(express.json({ limit: '100kb' }));
 
   app.get('/health', (_req, res) => res.json({ status: 'ok' }));

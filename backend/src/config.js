@@ -20,6 +20,9 @@ export const config = {
   // Fill an empty database with the demo accounts and listings. Set SEED_DEMO_DATA=false to disable.
   seedDemoData: process.env.SEED_DEMO_DATA !== 'false',
 
+  // Browser origins allowed to call the API (comma-separated), or * for any. Native apps ignore CORS.
+  corsOrigins: (process.env.CORS_ORIGINS ?? '*').split(',').map((origin) => origin.trim()).filter(Boolean),
+
   maxPhotos: 3,
   // Vercel caps request bodies at 4.5 MB, so keep each photo (and the 3 together) under that.
   // The iOS app compresses photos to well under 1 MB.

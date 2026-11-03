@@ -112,6 +112,19 @@ describe('PureCS Market API', () => {
     buyerToken = right.body.token;
   });
 
+  test('browsers get CORS headers and preflights are answered', async () => {
+    const preflight = await fetch(`${baseURL}/listings`, {
+      method: 'OPTIONS',
+      headers: { Origin: 'http://localhost:5173', 'Access-Control-Request-Method': 'POST' },
+    });
+    assert.equal(preflight.status, 204);
+    assert.equal(preflight.headers.get('access-control-allow-origin'), '*');
+    assert.match(preflight.headers.get('access-control-allow-headers'), /Authorization/);
+
+    const health = await fetch(`${baseURL}/health`, { headers: { Origin: 'http://localhost:5173' } });
+    assert.equal(health.headers.get('access-control-allow-origin'), '*');
+  });
+
   test('listing routes require a token', async () => {
     const response = await api('GET', '/listings');
     assert.equal(response.status, 401);

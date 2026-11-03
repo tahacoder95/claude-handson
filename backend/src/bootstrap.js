@@ -16,6 +16,7 @@ export async function createConfiguredApp() {
     photoStorage: createPhotoStorage(config),
     maxPhotos: config.maxPhotos,
     maxPhotoBytes: config.maxPhotoBytes,
+    corsOrigins: config.corsOrigins,
     logRequests: true,
   });
   return { app, db };
