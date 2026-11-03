@@ -1,0 +1,10 @@
+# macOS
+.DS_Store
+
+# Xcode per-user state and build output
+xcuserdata/
+DerivedData/
+*.xcuserstate
+
+# Claude Code personal settings (the shared skill in .claude/skills is committed)
+.claude/settings.local.json

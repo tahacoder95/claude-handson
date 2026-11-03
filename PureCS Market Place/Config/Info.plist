@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Merged with the build-setting-generated Info.plist.
+	     DEMO ONLY: the Node server runs over plain HTTP on a laptop or LAN address.
+	     Remove NSAllowsArbitraryLoads once the API is hosted behind HTTPS. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>PureCS Market connects to the demo server on your local network.</string>
+</dict>
+</plist>
