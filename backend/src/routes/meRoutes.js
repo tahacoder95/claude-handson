@@ -9,8 +9,8 @@ export function createMeRouter({ listingsService }) {
     res.json(serializeUser(req.user));
   });
 
-  router.get('/listings', (req, res) => {
-    const listings = listingsService.listForSeller(req.user.id);
+  router.get('/listings', async (req, res) => {
+    const listings = await listingsService.listForSeller(req.user.id);
     res.json(listings.map((listing) => serializeListing(listing)));
   });
 

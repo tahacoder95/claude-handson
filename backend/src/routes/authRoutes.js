@@ -23,8 +23,8 @@ export function createAuthRouter({ authService, requireAuth }) {
     res.json({ token, user: serializeUser(user) });
   });
 
-  router.post('/logout', requireAuth, (req, res) => {
-    authService.logout(req.token);
+  router.post('/logout', requireAuth, async (req, res) => {
+    await authService.logout(req.token);
     res.status(204).end();
   });
 

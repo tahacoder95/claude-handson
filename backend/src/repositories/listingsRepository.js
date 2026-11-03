@@ -15,144 +15,120 @@ const ORDER_BY = {
 
 const UPDATABLE_COLUMNS = ['title', 'description', 'price_aed', 'category', 'condition', 'location', 'status'];
 
+const INSERT_PHOTO = 'INSERT INTO listing_photos (listing_id, file_name, position) VALUES (?, ?, ?)';
+
 function escapeLike(text) {
   return text.replace(/[\\%_]/g, (char) => `\\${char}`);
 }
 
-/** Data access for `listings` and `listing_photos`. Rows come back with a `photos` array. */
+/**
+ * Data access for `listings` and `listing_photos`. Rows come back with a `photos` array of
+ * `{ id, file_name, position }`. Multi-statement writes use one atomic batch.
+ */
 export function createListingsRepository(db) {
-  const selectById = db.prepare(`SELECT ${LISTING_COLUMNS} ${FROM_LISTINGS} WHERE l.id = ?`);
-  const selectBySeller = db.prepare(
-    `SELECT ${LISTING_COLUMNS} ${FROM_LISTINGS} WHERE l.seller_id = ? ORDER BY l.updated_at DESC, l.id DESC`,
-  );
-  const insertListing = db.prepare(`
-    INSERT INTO listings (seller_id, title, description, price_aed, category, condition, location)
-    VALUES (@seller_id, @title, @description, @price_aed, @category, @condition, @location)`);
-  const insertPhoto = db.prepare('INSERT INTO listing_photos (listing_id, file_name, position) VALUES (?, ?, ?)');
-  const selectPhotos = db.prepare(
-    'SELECT id, listing_id, file_name, position FROM listing_photos WHERE listing_id = ? ORDER BY position, id',
-  );
-  const selectPhoto = db.prepare('SELECT id, file_name FROM listing_photos WHERE id = ? AND listing_id = ?');
-  const deletePhoto = db.prepare('DELETE FROM listing_photos WHERE id = ?');
-  const touch = db.prepare(`UPDATE listings SET updated_at = ${SQL_NOW} WHERE id = ?`);
-  const deleteListing = db.prepare('DELETE FROM listings WHERE id = ?');
+  function photosFor(listingId) {
+    return db.all(
+      'SELECT id, listing_id, file_name, position FROM listing_photos WHERE listing_id = ? ORDER BY position, id',
+      [listingId],
+    );
+  }
 
-  function attachPhotos(rows) {
+  async function attachPhotos(rows) {
     if (rows.length === 0) return rows;
     const ids = rows.map((row) => row.id);
-    const photos = db
-      .prepare(
-        `SELECT id, listing_id, file_name, position FROM listing_photos
-         WHERE listing_id IN (${ids.map(() => '?').join(', ')}) ORDER BY position, id`,
-      )
-      .all(...ids);
+    const photos = await db.all(
+      `SELECT id, listing_id, file_name, position FROM listing_photos
+       WHERE listing_id IN (${ids.map(() => '?').join(', ')}) ORDER BY position, id`,
+      ids,
+    );
     const byListing = Map.groupBy(photos, (photo) => photo.listing_id);
     return rows.map((row) => ({ ...row, photos: byListing.get(row.id) ?? [] }));
   }
 
-  const createTransaction = db.transaction((sellerId, fields, fileNames) => {
-    const { lastInsertRowid } = insertListing.run({
-      seller_id: sellerId,
-      title: fields.title,
-      description: fields.description,
-      price_aed: fields.price_aed,
-      category: fields.category,
-      condition: fields.condition,
-      location: fields.location,
-    });
-    fileNames.forEach((fileName, index) => insertPhoto.run(lastInsertRowid, fileName, index));
-    return Number(lastInsertRowid);
-  });
-
-  const updateTransaction = db.transaction((id, fields, removePhotoIds, addFileNames) => {
-    const columns = UPDATABLE_COLUMNS.filter((column) => fields[column] !== undefined);
-    if (columns.length > 0) {
-      const assignments = columns.map((column) => `${column} = @${column}`).join(', ');
-      const values = Object.fromEntries(columns.map((column) => [column, fields[column]]));
-      db.prepare(`UPDATE listings SET ${assignments}, updated_at = ${SQL_NOW} WHERE id = @id`).run({ ...values, id });
-    } else {
-      touch.run(id);
-    }
-
-    const removedFileNames = [];
-    for (const photoId of removePhotoIds) {
-      const photo = selectPhoto.get(photoId, id);
-      if (photo) {
-        deletePhoto.run(photo.id);
-        removedFileNames.push(photo.file_name);
-      }
-    }
-
-    const remaining = selectPhotos.all(id);
-    remaining.forEach((photo, index) => {
-      db.prepare('UPDATE listing_photos SET position = ? WHERE id = ?').run(index, photo.id);
-    });
-    addFileNames.forEach((fileName, index) => insertPhoto.run(id, fileName, remaining.length + index));
-    return removedFileNames;
-  });
-
-  const deleteTransaction = db.transaction((id) => {
-    const fileNames = selectPhotos.all(id).map((photo) => photo.file_name);
-    deleteListing.run(id);
-    return fileNames;
-  });
-
   return {
-    search({ q, category, sort = 'newest', excludeSellerId, limit = 100 }) {
+    async search({ q, category, sort = 'newest', excludeSellerId, limit = 100 }) {
       const conditions = ["l.status = 'active'"];
-      const params = [];
+      const args = [];
       if (excludeSellerId) {
         conditions.push('l.seller_id != ?');
-        params.push(excludeSellerId);
+        args.push(excludeSellerId);
       }
       if (category) {
         conditions.push('l.category = ?');
-        params.push(category);
+        args.push(category);
       }
       if (q) {
         const pattern = `%${escapeLike(q)}%`;
         conditions.push(
           "(l.title LIKE ? ESCAPE '\\' OR l.description LIKE ? ESCAPE '\\' OR l.location LIKE ? ESCAPE '\\')",
         );
-        params.push(pattern, pattern, pattern);
+        args.push(pattern, pattern, pattern);
       }
-      const rows = db
-        .prepare(
-          `SELECT ${LISTING_COLUMNS} ${FROM_LISTINGS}
-           WHERE ${conditions.join(' AND ')}
-           ORDER BY ${ORDER_BY[sort] ?? ORDER_BY.newest}
-           LIMIT ?`,
-        )
-        .all(...params, limit);
+      const rows = await db.all(
+        `SELECT ${LISTING_COLUMNS} ${FROM_LISTINGS}
+         WHERE ${conditions.join(' AND ')}
+         ORDER BY ${ORDER_BY[sort] ?? ORDER_BY.newest}
+         LIMIT ?`,
+        [...args, limit],
+      );
       return attachPhotos(rows);
     },
 
-    findById(id) {
-      const row = selectById.get(id);
-      return row ? attachPhotos([row])[0] : undefined;
+    async findById(id) {
+      const row = await db.get(`SELECT ${LISTING_COLUMNS} ${FROM_LISTINGS} WHERE l.id = ?`, [id]);
+      return row ? (await attachPhotos([row]))[0] : undefined;
     },
 
-    findBySeller(sellerId) {
-      return attachPhotos(selectBySeller.all(sellerId));
-    },
-
-    countPhotos(id) {
-      return selectPhotos.all(id).length;
+    async findBySeller(sellerId) {
+      const rows = await db.all(
+        `SELECT ${LISTING_COLUMNS} ${FROM_LISTINGS} WHERE l.seller_id = ? ORDER BY l.updated_at DESC, l.id DESC`,
+        [sellerId],
+      );
+      return attachPhotos(rows);
     },
 
     /** Returns the new listing's id. */
-    create(sellerId, fields, fileNames) {
-      return createTransaction(sellerId, fields, fileNames);
+    async create(sellerId, fields, photoRefs) {
+      const { lastInsertRowid: id } = await db.run(
+        `INSERT INTO listings (seller_id, title, description, price_aed, category, condition, location)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [sellerId, fields.title, fields.description, fields.price_aed, fields.category, fields.condition, fields.location],
+      );
+      try {
+        await db.batch(photoRefs.map((ref, index) => [INSERT_PHOTO, [id, ref, index]]));
+      } catch (error) {
+        await db.run('DELETE FROM listings WHERE id = ?', [id]);
+        throw error;
+      }
+      return id;
     },
 
-    /** Returns the file names of removed photos so the caller can delete them from disk. */
-    update(id, fields, { removePhotoIds = [], addFileNames = [] } = {}) {
-      return updateTransaction(id, fields, removePhotoIds, addFileNames);
+    /** Returns the references of removed photos so the caller can delete the files. */
+    async update(id, fields, { removePhotoIds = [], addPhotoRefs = [] } = {}) {
+      const current = await photosFor(id);
+      const removed = current.filter((photo) => removePhotoIds.includes(photo.id));
+      const kept = current.filter((photo) => !removePhotoIds.includes(photo.id));
+
+      const columns = UPDATABLE_COLUMNS.filter((column) => fields[column] !== undefined);
+      const assignments = [...columns.map((column) => `${column} = ?`), `updated_at = ${SQL_NOW}`].join(', ');
+
+      await db.batch([
+        [`UPDATE listings SET ${assignments} WHERE id = ?`, [...columns.map((column) => fields[column]), id]],
+        ...removed.map((photo) => ['DELETE FROM listing_photos WHERE id = ?', [photo.id]]),
+        ...kept.map((photo, index) => ['UPDATE listing_photos SET position = ? WHERE id = ?', [index, photo.id]]),
+        ...addPhotoRefs.map((ref, index) => [INSERT_PHOTO, [id, ref, kept.length + index]]),
+      ]);
+      return removed.map((photo) => photo.file_name);
     },
 
-    /** Returns the file names of the listing's photos so the caller can delete them from disk. */
-    delete(id) {
-      return deleteTransaction(id);
+    /** Returns the references of the listing's photos so the caller can delete the files. */
+    async delete(id) {
+      const photos = await photosFor(id);
+      await db.batch([
+        ['DELETE FROM listing_photos WHERE listing_id = ?', [id]],
+        ['DELETE FROM listings WHERE id = ?', [id]],
+      ]);
+      return photos.map((photo) => photo.file_name);
     },
   };
 }

@@ -62,20 +62,22 @@ There is no iOS test target yet. When the first view model lands, ask the user t
 
 ## Backend
 
-- Node.js 24 LTS, Express 5, `better-sqlite3` (WAL mode), `bcryptjs`, `multer` (photo uploads to `backend/uploads/`, served at `/uploads/...`), `zod` (validation). Nothing else without asking.
+- Node.js 24, Express 5, `@libsql/client` (SQLite locally, **Turso** in production), `@vercel/blob` (photos in production), `bcryptjs`, `multer` (memory storage), `zod`. Nothing else without asking.
+- Deployed on **Vercel** as one serverless function: `backend/api/index.js` + `backend/vercel.json` route every path to the Express app (Vercel project Root Directory = `backend`). `src/server.js` is the local dev server. Both build the app through `src/bootstrap.js`.
+- Storage is picked from env: `TURSO_DATABASE_URL`/`TURSO_AUTH_TOKEN` → Turso, else `file:data/market.db`; `BLOB_READ_WRITE_TOKEN` (or running on Vercel) → Vercel Blob, else `uploads/` served at `/uploads`. Photo rows store a reference (file name or blob URL); the service turns it into `photos: [{ id, url }]`.
+- Serverless rules: no local disk writes, multi-statement writes are one `db.batch(...)` (atomic, one round trip), no reliance on `ON DELETE CASCADE` (delete children explicitly), request bodies ≤ 4.5 MB (photos capped at 4 MB each).
 - Auth: passwords hashed with bcrypt; sign-in returns a random token stored in a `sessions` table; clients send `Authorization: Bearer <token>`. No JWT.
 - Errors are JSON: `{ "error": "message" }` with a proper status code. JSON keys are `snake_case`; the iOS decoder converts them.
-- Tables: `users`, `sessions`, `listings` (price as integer `price_aed`, `status` = `active` | `sold`), `listing_photos`.
-- Layers: routes (HTTP + validation) → services (rules: ownership, photo limits) → repositories (SQL only). `src/app.js` is the composition root and takes the db/uploads dir so tests use `:memory:`.
-- `npm run seed` resets the DB to 4 demo accounts (`omar`, `aisha`, `sara`, `ravi`, password `demo123`) and 16 listings (no photos; the app shows category placeholders). `SampleData.swift` mirrors it for offline mode.
+- Layers: routes (HTTP + validation) → services (rules: ownership, photo limits, storage cleanup) → repositories (SQL only).
+- Demo data: an empty database is seeded automatically on first start (`SEED_DEMO_DATA=false` disables it): 4 accounts (`omar`, `aisha`, `sara`, `ravi`, password `demo123`) and 16 listings without photos. `npm run seed` wipes and re-seeds whichever database the env points at. `SampleData.swift` mirrors it for the app's offline mode.
 - Node comes from nvm (`~/.nvm/versions/node/v24.18.0`); it isn't on the default PATH, so run `nvm use` or export that bin dir first.
 
 ```bash
 cd backend
 npm install
+npm start         # http://localhost:3000 (seeds an empty local DB), also prints the LAN address for phones
 npm run seed      # reset demo data
-npm start         # http://localhost:3000, also prints the LAN address for phones
-npm test          # node:test API tests against an in-memory database
+npm test          # node:test: API suite + the Vercel handler, against temp SQLite files
 ```
 
 | Method | Path | Notes |

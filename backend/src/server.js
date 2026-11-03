@@ -1,10 +1,9 @@
 import os from 'node:os';
-import { createApp } from './app.js';
+import { createConfiguredApp } from './bootstrap.js';
 import { config } from './config.js';
-import { openDatabase } from './db/database.js';
 
-const db = openDatabase(config.databasePath);
-const app = createApp({ db, ...config, logRequests: true });
+// Local development server. On Vercel, api/index.js is the entry point instead.
+const { app, db } = await createConfiguredApp();
 
 const server = app.listen(config.port, config.host, () => {
   console.log(`PureCS Market API listening on http://localhost:${config.port}`);

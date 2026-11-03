@@ -1,26 +1,17 @@
-import crypto from 'node:crypto';
 import multer from 'multer';
+import { PHOTO_EXTENSIONS } from '../storage/photoTypes.js';
 import { HttpError } from '../utils/httpError.js';
 
-const EXTENSIONS = {
-  'image/jpeg': '.jpg',
-  'image/png': '.png',
-  'image/heic': '.heic',
-  'image/webp': '.webp',
-};
-
-/** Multipart parser for listing photos (field name `photos`). */
-export function createPhotoUpload({ uploadsDir, maxPhotos, maxPhotoBytes }) {
-  const storage = multer.diskStorage({
-    destination: uploadsDir,
-    filename: (_req, file, callback) => callback(null, `${crypto.randomUUID()}${EXTENSIONS[file.mimetype]}`),
-  });
-
+/**
+ * Multipart parser for listing photos (field name `photos`). Files are kept in memory and handed
+ * to photo storage by the service, so nothing is written to the (read-only) serverless disk.
+ */
+export function createPhotoUpload({ maxPhotos, maxPhotoBytes }) {
   return multer({
-    storage,
+    storage: multer.memoryStorage(),
     limits: { files: maxPhotos, fileSize: maxPhotoBytes },
     fileFilter: (_req, file, callback) => {
-      if (EXTENSIONS[file.mimetype]) {
+      if (PHOTO_EXTENSIONS[file.mimetype]) {
         callback(null, true);
       } else {
         callback(new HttpError(400, 'Photos must be JPEG, PNG, HEIC or WebP images.'));

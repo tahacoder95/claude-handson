@@ -5,6 +5,8 @@ import path from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { createApp } from '../src/app.js';
 import { openDatabase } from '../src/db/database.js';
+import { seedIfEmpty } from '../src/db/seed.js';
+import { createLocalPhotoStorage } from '../src/storage/localPhotoStorage.js';
 
 // A 1×1 transparent PNG.
 const PNG_BYTES = Buffer.from(
@@ -15,6 +17,7 @@ const PNG_BYTES = Buffer.from(
 let server;
 let baseURL;
 let db;
+let tempDir;
 let uploadsDir;
 
 async function api(method, route, { token, json, form } = {}) {
@@ -51,9 +54,11 @@ const SOFA = {
 };
 
 before(async () => {
-  uploadsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'purecs-uploads-'));
-  db = openDatabase(':memory:');
-  const app = createApp({ db, uploadsDir, maxPhotos: 3, maxPhotoBytes: 1024 * 1024 });
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'purecs-test-'));
+  uploadsDir = path.join(tempDir, 'uploads');
+  db = await openDatabase({ url: `file:${path.join(tempDir, 'test.db')}` });
+  const photoStorage = createLocalPhotoStorage(uploadsDir);
+  const app = createApp({ db, photoStorage, maxPhotos: 3, maxPhotoBytes: 1024 * 1024 });
   await new Promise((resolve) => {
     server = app.listen(0, '127.0.0.1', resolve);
   });
@@ -63,7 +68,7 @@ before(async () => {
 after(() => {
   server.close();
   db.close();
-  fs.rmSync(uploadsDir, { recursive: true, force: true });
+  fs.rmSync(tempDir, { recursive: true, force: true });
 });
 
 describe('PureCS Market API', () => {
@@ -207,8 +212,20 @@ describe('PureCS Market API', () => {
     const detail = await api('GET', `/listings/${listing.id}`, { token: buyerToken });
     assert.equal(detail.status, 404);
 
-    await new Promise((resolve) => setTimeout(resolve, 50));
     assert.ok(!fs.existsSync(path.join(uploadsDir, fileName)));
+  });
+
+  test('seeding only happens on an empty database', async () => {
+    assert.equal(await seedIfEmpty(db), false, 'accounts already exist');
+
+    const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'purecs-seed-'));
+    const emptyDb = await openDatabase({ url: `file:${path.join(emptyDir, 'seed.db')}` });
+    assert.equal(await seedIfEmpty(emptyDb), true);
+    assert.equal(await seedIfEmpty(emptyDb), false, 'second call is a no-op');
+    const { count } = await emptyDb.get('SELECT COUNT(*) AS count FROM listings');
+    assert.equal(count, 16);
+    emptyDb.close();
+    fs.rmSync(emptyDir, { recursive: true, force: true });
   });
 
   test('logout invalidates the token', async () => {
